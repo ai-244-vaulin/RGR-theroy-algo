@@ -1,9 +1,10 @@
 import heapq
 import struct
+import os
 from collections import defaultdict
-from VARS import *
 
 
+# ---------- Вузол дерева ----------
 class Node:
     def __init__(self, char, freq):
         self.char = char
@@ -15,6 +16,7 @@ class Node:
         return self.freq < other.freq
 
 
+# ---------- Побудова таблиці частот ----------
 def build_frequency_table(data: str):
     freq = defaultdict(int)
     for ch in data:
@@ -22,11 +24,13 @@ def build_frequency_table(data: str):
     return freq
 
 
+# ---------- Побудова дерева Хаффмана ----------
 def build_huffman_tree(freq_table):
     heap = []
     for ch, fr in freq_table.items():
         heapq.heappush(heap, Node(ch, fr))
 
+    # Якщо символ один → додаємо фейковий
     if len(heap) == 1:
         only = heapq.heappop(heap)
         fake = Node(None, 0)
@@ -35,17 +39,21 @@ def build_huffman_tree(freq_table):
         new.right = fake
         return new
 
+    # Основний цикл побудови дерева
     while len(heap) > 1:
         left = heapq.heappop(heap)
         right = heapq.heappop(heap)
+
         merged = Node(None, left.freq + right.freq)
         merged.left = left
         merged.right = right
+
         heapq.heappush(heap, merged)
 
     return heap[0]
 
 
+# ---------- Генерація кодів ----------
 def generate_codes(node, prefix="", codes=None):
     if codes is None:
         codes = {}
@@ -59,6 +67,7 @@ def generate_codes(node, prefix="", codes=None):
     return codes
 
 
+# ---------- Перетворення бітового рядка у bytes ----------
 def bits_to_bytes(bitstring):
     padding = 8 - (len(bitstring) % 8)
     if padding != 8:
@@ -70,15 +79,23 @@ def bits_to_bytes(bitstring):
     return padding.to_bytes(1, "big") + out
 
 
+# ---------- Перетворення bytes у бітовий рядок ----------
 def bytes_to_bits(padded_data):
     padding = padded_data[0]
     bitstring = "".join(f"{byte:08b}" for byte in padded_data[1:])
-    if padding:
-        bitstring = bitstring[:-padding]
-    return bitstring
+    return bitstring[:-padding] if padding else bitstring
 
+
+# ============================================================
+#                         С Т И С Н Е Н Н Я
+# ============================================================
 
 def huffman_compress(input_path, output_path):
+
+    # Розмір до стиснення
+    Sorig = os.path.getsize(input_path)
+
+    # Зчитування тексту
     with open(input_path, "r", encoding="utf-8") as f:
         data = f.read()
 
@@ -86,9 +103,11 @@ def huffman_compress(input_path, output_path):
     tree = build_huffman_tree(freq_table)
     codes = generate_codes(tree)
 
+    # Кодування тексту
     encoded_bits = "".join(codes[ch] for ch in data)
     encoded_bytes = bits_to_bytes(encoded_bits)
 
+    # Запис стисненого файлу
     with open(output_path, "wb") as f:
         f.write(struct.pack(">H", len(freq_table)))
 
@@ -100,18 +119,38 @@ def huffman_compress(input_path, output_path):
 
         f.write(encoded_bytes)
 
-    print(f"Файл стиснено: {output_path}")
+    # Розмір після стиснення
+    Scomp = os.path.getsize(output_path)
 
+    # Показники ефективності
+    compression_ratio = 1 - (Scomp / Sorig)
+    compression_factor = Sorig / Scomp
+
+    print("\n=== Показники стиснення ===")
+    print(f"Sorig (до):      {Sorig} байт")
+    print(f"Scomp (після):   {Scomp} байт")
+    print(f"Compression Ratio:  {compression_ratio:.4f}  ({compression_ratio*100:.2f}%)")
+    print(f"Compression Factor: {compression_factor:.4f} разів")
+
+    print(f"\nФайл стиснено → {output_path}")
+
+
+# ============================================================
+#                         Р О З П А К У В А Н Н Я
+# ============================================================
 
 def huffman_decompress(input_path, output_path):
+
     with open(input_path, "rb") as f:
         raw = f.read()
 
     pos = 0
 
+    # Кількість символів
     symbols_count = struct.unpack(">H", raw[pos:pos+2])[0]
     pos += 2
 
+    # Читання частот
     freq_table = {}
     for _ in range(symbols_count):
         strlen = struct.unpack(">B", raw[pos:pos+1])[0]
@@ -125,8 +164,10 @@ def huffman_decompress(input_path, output_path):
 
         freq_table[ch] = freq
 
+    # Залишок → бітовий потік
     bit_data = bytes_to_bits(raw[pos:])
 
+    # Побудова дерева та декодування
     tree = build_huffman_tree(freq_table)
 
     result = []
@@ -139,18 +180,14 @@ def huffman_decompress(input_path, output_path):
             result.append(node.char)
             node = tree
 
+    # Запис результату
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("".join(result))
 
-    print(f"Файл розпаковано: {output_path}")
+    print(f"Файл розпаковано → {output_path}")
 
 
+# ============== Приклад запуску ==============
 if __name__ == "__main__":
-    huffman_compress(f"{PATH_TO_TEST_FILES}sample1_short.txt", f"{PATH_TO_OUTPUT_FILES}sample1_short.huff")
-    # huffman_compress(f"{PATH_TO_TEST_FILES}sample2_medium.txt", f"{PATH_TO_OUTPUT_FILES}sample2_medium.huff")
-    # huffman_compress(f"{PATH_TO_TEST_FILES}sample3_large.txt", f"{PATH_TO_OUTPUT_FILES}sample3_large.huff")
-    # huffman_compress(f"{PATH_TO_TEST_FILES}sample4_random.txt", f"{PATH_TO_OUTPUT_FILES}sample4_random.huff")
-    # huffman_compress(f"{PATH_TO_TEST_FILES}sample5_numbers.txt", f"{PATH_TO_OUTPUT_FILES}sample5_numbers.huff")
-    # huffman_compress(f"{PATH_TO_TEST_FILES}sample6_ukr.txt", f"{PATH_TO_OUTPUT_FILES}sample6_ukr.huff")
-
-    # huffman_decompress("sample1_short.huff", "decoded_sample1.txt")
+    huffman_compress("sample1_short.txt", "sample1_short.huff")
+    huffman_decompress("sample1_short.huff", "decoded_sample1.txt")
